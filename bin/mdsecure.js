@@ -43,37 +43,38 @@ function generateAESKey() {
 }
 
 function updatePackageJson() {
-  // Foydalanuvchi turgan papkada package.json izlash
   const projectDir = process.cwd();
   const pkgPath = path.join(projectDir, 'package.json');
-  let projectPkg = {};
+  let updated = false;
 
   if (fs.existsSync(pkgPath)) {
     try {
-      const fileData = fs.readFileSync(pkgPath, 'utf8');
-      projectPkg = JSON.parse(fileData);
+      const pkgData = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
+
+      if (!pkgData.scripts) {
+        pkgData.scripts = {};
+      }
+
+      if (!pkgData.scripts.start) {
+        pkgData.scripts.start = 'node server.js';
+        updated = true;
+      }
+
+      fs.writeFileSync(pkgPath, JSON.stringify(pkgData, null, 2));
+      if (updated) {
+        console.log(`✅ package.json yangilandi: "start" script qo'shildi`);
+      } else {
+        console.log(`ℹ️ package.json allaqachon "start" scriptga ega`);
+      }
     } catch (err) {
-      console.warn('⚠️ package.json invalid JSON format. Recreating...');
-      projectPkg = {};
+      console.error(`⚠️ package.json o'qishda xatolik. Qo'lda qo'sh:`);
+      console.log(`"scripts": { "start": "node server.js" }`);
     }
   } else {
-    console.log('📦 No package.json found. Creating new one...');
+    console.log(`⚠️ package.json topilmadi. Yangi loyiha bo'lsa quyidagilarni qo'sh:`);
+    console.log(`npm init -y`);
+    console.log(`"scripts": { "start": "node server.js" }`);
   }
-
-  if (!projectPkg.name) {
-    projectPkg.name = path.basename(projectDir);
-  }
-  if (!projectPkg.version) {
-    projectPkg.version = '1.0.0';
-  }
-  if (!projectPkg.scripts) {
-    projectPkg.scripts = {};
-  }
-
-  projectPkg.scripts.start = 'node server.js';
-
-  fs.writeFileSync(pkgPath, JSON.stringify(projectPkg, null, 2));
-  console.log(`✅ package.json updated in: ${pkgPath}`);
 }
 
 function createServerJs() {
