@@ -9,13 +9,10 @@ import { fileURLToPath } from 'url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const pkgPath = path.resolve(__dirname, '../package.json');
-const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
-
 const COMMANDS = ['create', 'generate-key', 'help'];
 
 function printHeader() {
-  console.log(`\n🔐 mdsecure v${pkg.version}`);
+  console.log(`\n🔐 mdsecure CLI v1.0.22`);
   console.log(`Available commands:`);
   console.log(`  mdsecure create        → Setup secure WS + env`);
   console.log(`  mdsecure generate-key  → Generate MODDER_KEY and save to .env`);
@@ -44,10 +41,6 @@ function generateAESKey() {
   return crypto.randomBytes(32).toString('base64');
 }
 
-/** 
- * Updated function that replaces dev and start scripts exactly as requested,
- * keeps other scripts intact.
- */
 function updatePackageJson() {
   const projectDir = process.cwd();
   const pkgPath = path.join(projectDir, 'package.json');
@@ -55,48 +48,50 @@ function updatePackageJson() {
 
   if (fs.existsSync(pkgPath)) {
     try {
-      const pkgData = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
+      const pkgDataRaw = fs.readFileSync(pkgPath, 'utf8');
+      const pkgData = JSON.parse(pkgDataRaw);
 
-      if (!pkgData.scripts) {
-        pkgData.scripts = {};
-      }
-
-      // Doimiy yangilash:
-      const newDevScript = 'node server.js';
-      const newStartScript = 'NODE_ENV=production node server.js';
-
-      if (pkgData.scripts.dev !== newDevScript) {
-        pkgData.scripts.dev = newDevScript;
+      // Qo'shish yoki yangilash type: module
+      if (pkgData.type !== 'module') {
+        pkgData.type = 'module';
         updated = true;
-      }
-
-      if (pkgData.scripts.start !== newStartScript) {
-        pkgData.scripts.start = newStartScript;
-        updated = true;
-      }
-
-      if (updated) {
-        fs.writeFileSync(pkgPath, JSON.stringify(pkgData, null, 2));
-        console.log(`✅ package.json updated with "dev" and "start" scripts`);
+        console.log(`✅ Added "type": "module" to package.json`);
       } else {
-        console.log(`ℹ️ package.json already has the desired "dev" and "start" scripts`);
+        console.log(`ℹ️ package.json already has "type": "module"`);
+      }
+
+      if (!pkgData.scripts) pkgData.scripts = {};
+
+      // Skriptlarni yangilash yoki qo'shish
+      const devScript = 'node server.js';
+      const startScript = 'NODE_ENV=production node server.js';
+
+      if (pkgData.scripts.dev !== devScript) {
+        pkgData.scripts.dev = devScript;
+        updated = true;
+      }
+      if (pkgData.scripts.start !== startScript) {
+        pkgData.scripts.start = startScript;
+        updated = true;
+      }
+
+      fs.writeFileSync(pkgPath, JSON.stringify(pkgData, null, 2));
+      if (updated) {
+        console.log(`✅ package.json updated with "type" and "scripts"`);
+      } else {
+        console.log(`ℹ️ package.json already has required scripts`);
       }
     } catch (err) {
-      console.error(`⚠️ Could not read package.json. Please add these scripts manually:`);
-      console.log(`"scripts": {`);
-      console.log(`  "dev": "node server.js",`);
-      console.log(`  "start": "NODE_ENV=production node server.js"`);
-      console.log(`}`);
+      console.error(`⚠️ Error parsing package.json. Please update manually:`);
+      console.log(`Add "type": "module" and scripts:`);
+      console.log(`"scripts": { "dev": "node server.js", "start": "NODE_ENV=production node server.js" }`);
     }
   } else {
-    console.log(`⚠️ package.json not found. Run "npm init -y" then add:`);
-    console.log(`"scripts": {`);
-    console.log(`  "dev": "node server.js",`);
-    console.log(`  "start": "NODE_ENV=production node server.js"`);
-    console.log(`}`);
+    console.log(`⚠️ package.json not found. Run "npm init -y" and add:`);
+    console.log(`"type": "module"`);
+    console.log(`"scripts": { "dev": "node server.js", "start": "NODE_ENV=production node server.js" }`);
   }
 }
-
 
 function createServerJs() {
   const serverContent = `
@@ -112,6 +107,7 @@ const AES_KEY = CryptoJS.enc.Base64.parse(process.env.MODDER_KEY);
 wss.on('connection', (ws) => {
   ws.on('message', async (msg) => {
     if (msg.toString() === 'fetchPosts') {
+      // TODO: Bu joyga Supabase dan haqiqiy ma'lumot olishni qo'shishingiz mumkin
       const payload = [{ title: 'Hello', content: 'Secure World', user_id: 1 }];
       const iv = CryptoJS.lib.WordArray.random(16);
       const encrypted = CryptoJS.AES.encrypt(JSON.stringify(payload), AES_KEY, {
@@ -165,7 +161,9 @@ async function runCreate() {
     createServerJs();
   }
 
-  console.log('\n✅ Setup complete! Run:\n   npm install\n   npm run dev');
+  console.log('\n✅ Setup complete! Run:');
+  console.log('   npm install');
+  console.log('   npm run dev');
 }
 
 function runGenerateKey() {
