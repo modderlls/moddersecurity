@@ -1,6 +1,6 @@
 # MdSecure SDK
 
-![MdSecure Logo (Placeholder - you can replace this with your actual logo)](/src/logo.png)
+![MdSecure Logo (Placeholder - you can replace this with your actual logo)](https://raw.githubusercontent.com/modderlls/moddersecurity/f25daa91ced2cf80270fd80ab8d61fa2039313b9/src/logo.png)
 
 ## 🛡️ Secure Data & Backend Encryption SDK
 
