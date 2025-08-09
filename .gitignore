@@ -1,0 +1,5 @@
+# Node.js loyihalari uchun odatiy
+node_modules/
+
+# Maxfiy kalitlar va muhit o'zgaruvchilari
+.env
