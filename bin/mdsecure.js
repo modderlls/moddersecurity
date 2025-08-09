@@ -9,7 +9,6 @@ import { fileURLToPath } from 'url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Load package.json without import assertion for Node.js compatibility
 const pkgPath = path.resolve(__dirname, '../package.json');
 const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
 
@@ -45,6 +44,10 @@ function generateAESKey() {
   return crypto.randomBytes(32).toString('base64');
 }
 
+/** 
+ * Updated function that replaces dev and start scripts exactly as requested,
+ * keeps other scripts intact.
+ */
 function updatePackageJson() {
   const projectDir = process.cwd();
   const pkgPath = path.join(projectDir, 'package.json');
@@ -58,24 +61,41 @@ function updatePackageJson() {
         pkgData.scripts = {};
       }
 
-      if (!pkgData.scripts.start) {
-        pkgData.scripts.start = 'node server.js';
+      // Set dev and start scripts exactly as requested:
+      const newDevScript = 'node server.js';
+      const newStartScript = 'NODE_ENV=production node server.js';
+
+      if (pkgData.scripts.dev !== newDevScript) {
+        pkgData.scripts.dev = newDevScript;
         updated = true;
       }
 
-      fs.writeFileSync(pkgPath, JSON.stringify(pkgData, null, 2));
+      if (pkgData.scripts.start !== newStartScript) {
+        pkgData.scripts.start = newStartScript;
+        updated = true;
+      }
+
+      // Note: We keep other scripts intact, e.g. build, lint, etc.
+
       if (updated) {
-        console.log(`✅ package.json updated: added "start" script`);
+        fs.writeFileSync(pkgPath, JSON.stringify(pkgData, null, 2));
+        console.log(`✅ package.json updated with custom "dev" and "start" scripts`);
       } else {
-        console.log(`ℹ️ package.json already has a "start" script`);
+        console.log(`ℹ️ package.json already has desired "dev" and "start" scripts`);
       }
     } catch (err) {
-      console.error(`⚠️ Could not read package.json. Please add manually:`);
-      console.log(`"scripts": { "start": "node server.js" }`);
+      console.error(`⚠️ Could not read package.json. Please add these scripts manually:`);
+      console.log(`"scripts": {`);
+      console.log(`  "dev": "node server.js",`);
+      console.log(`  "start": "NODE_ENV=production node server.js"`);
+      console.log(`}`);
     }
   } else {
     console.log(`⚠️ package.json not found. Run "npm init -y" then add:`);
-    console.log(`"scripts": { "start": "node server.js" }`);
+    console.log(`"scripts": {`);
+    console.log(`  "dev": "node server.js",`);
+    console.log(`  "start": "NODE_ENV=production node server.js"`);
+    console.log(`}`);
   }
 }
 
@@ -146,7 +166,7 @@ async function runCreate() {
     createServerJs();
   }
 
-  console.log('\n✅ Setup complete! Run:\n   npm install\n   npm start');
+  console.log('\n✅ Setup complete! Run:\n   npm install\n   npm run dev');
 }
 
 function runGenerateKey() {
