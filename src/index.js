@@ -53,12 +53,8 @@ class ModderSecureSDK {
             id: reversedEncryptedId, // Teskari o'girilgan asl shifr
             new_id: newTimeBasedId, // Vaqtga asoslangan yangi ID
             is_secured: true,
-            // Request ID va Timestamp endi Payload ichida emas, faqat Headerda.
-            // Lekin server ularni Payload ichidan ham olishni kutadi.
-            // Bu yerda confusion bor. Clientda ham shifrlash bor.
-            // Keling, payload ichiga yana request/timestamp qo'shamiz (bu tekshiruv uchun)
-            request: originalRequestId,
-            timestamp: originalTimestamp
+            request: originalRequestId, // Payload ichidagi haqiqiy Request ID
+            timestamp: originalTimestamp // Payload ichidagi haqiqiy Timestamp
         };
 
         return {
@@ -213,8 +209,6 @@ class ModderSecureSDK {
         console.log(`Handling premium request with pseudoKey: ${pseudoKey} and decrypted data:`, requestData);
 
         const premiumResponseContent = { message: "Premium data for user " + requestData.userId, report: "Full detailed report here..." };
-        // Bu yerda encrypt funksiyasi endi Request ID ni qaytarmaydi.
-        // Agar premium so'rovda ham requestId kerak bo'lsa, uni bu yerda generatsiya qilish kerak.
         return this.encrypt(premiumResponseContent, sessionKey).mscString; // FAQAT mscStringni qaytarish
     }
 
