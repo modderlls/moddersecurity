@@ -12,6 +12,7 @@ const __dirname = path.dirname(__filename);
 
 const COMMANDS = ['create', 'generate-key', 'help'];
 
+/* ---------- UI Helpers ---------- */
 function printHeader() {
   console.log(`\n🔐 mdsecure v${pkg.version}`);
   console.log(`Available commands:`);
@@ -20,6 +21,7 @@ function printHeader() {
   console.log(`  mdsecure help          → Show help info\n`);
 }
 
+/* ---------- ENV Helper ---------- */
 function ensureEnvKey(key, value) {
   const envPath = path.resolve(process.cwd(), '.env');
   let envData = '';
@@ -35,25 +37,24 @@ function ensureEnvKey(key, value) {
     envData = `${key}="${value}"`;
   }
   fs.writeFileSync(envPath, envData.trim() + '\n');
-  console.log(`✅ Saved ${key} to .env`);
+  console.log(`🔐 Added ${key} to .env`);
 }
 
+/* ---------- Key Generator ---------- */
 function generateAESKey() {
   return crypto.randomBytes(32).toString('base64');
 }
 
+/* ---------- package.json Updater ---------- */
 function updatePackageJson() {
-  const projectDir = process.cwd();
-  const pkgPath = path.join(projectDir, 'package.json');
+  const pkgPath = path.join(process.cwd(), 'package.json');
   let updated = false;
 
   if (fs.existsSync(pkgPath)) {
     try {
       const pkgData = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
 
-      if (!pkgData.scripts) {
-        pkgData.scripts = {};
-      }
+      if (!pkgData.scripts) pkgData.scripts = {};
 
       if (!pkgData.scripts.start) {
         pkgData.scripts.start = 'node server.js';
@@ -62,21 +63,22 @@ function updatePackageJson() {
 
       fs.writeFileSync(pkgPath, JSON.stringify(pkgData, null, 2));
       if (updated) {
-        console.log(`✅ package.json yangilandi: "start" script qo'shildi`);
+        console.log(`📦 package.json updated: "start" script added`);
       } else {
-        console.log(`ℹ️ package.json allaqachon "start" scriptga ega`);
+        console.log(`ℹ️ package.json already has a "start" script`);
       }
-    } catch (err) {
-      console.error(`⚠️ package.json o'qishda xatolik. Qo'lda qo'sh:`);
+    } catch {
+      console.error(`⚠️ Could not read package.json. Please add manually:`);
       console.log(`"scripts": { "start": "node server.js" }`);
     }
   } else {
-    console.log(`⚠️ package.json topilmadi. Yangi loyiha bo'lsa quyidagilarni qo'sh:`);
-    console.log(`npm init -y`);
+    console.log(`⚠️ package.json not found.`);
+    console.log(`Run "npm init -y" and then add:`);
     console.log(`"scripts": { "start": "node server.js" }`);
   }
 }
 
+/* ---------- server.js Template ---------- */
 function createServerJs() {
   const serverContent = `
 import WebSocket, { WebSocketServer } from 'ws';
@@ -112,25 +114,26 @@ wss.on('connection', (ws) => {
   console.log('🖥 server.js created');
 }
 
+/* ---------- CLI Actions ---------- */
 async function runCreate() {
-  console.log('⚙️ mdsecure setup starting...\n');
+  console.log('⚙️ Starting mdsecure setup...\n');
   const answers = await inquirer.prompt([
     {
       type: 'list',
       name: 'projectType',
-      message: 'Do you want to create a new project or add to existing?',
+      message: 'Do you want to create a new project or add to an existing one?',
       choices: ['New project', 'Add to existing']
     },
     {
       type: 'confirm',
       name: 'useSupabase',
-      message: 'Is Supabase configured in this project?',
+      message: 'Will you use Supabase with this project?',
       default: false
     },
     {
       type: 'confirm',
       name: 'createTemplate',
-      message: 'Generate example template files?',
+      message: 'Generate example server.js template?',
       default: true
     }
   ]);
@@ -138,29 +141,29 @@ async function runCreate() {
   const key = generateAESKey();
   ensureEnvKey('MODDER_KEY', key);
 
-  if (answers.projectType === 'New project') {
-    updatePackageJson();
-  } else {
-    updatePackageJson();
-  }
+  updatePackageJson();
 
   if (answers.createTemplate) {
     createServerJs();
   }
 
   console.log('\n✅ Setup complete!');
+  console.log('   Run the following to start:');
+  console.log('   npm install');
+  console.log('   npm start\n');
 }
 
 function runGenerateKey() {
   const key = generateAESKey();
   ensureEnvKey('MODDER_KEY', key);
-  console.log(`🔑 Generated new MODDER_KEY`);
+  console.log(`🔑 New MODDER_KEY generated`);
 }
 
 function showHelp() {
   printHeader();
 }
 
+/* ---------- Main ---------- */
 async function main() {
   const [, , cmd] = process.argv;
   printHeader();
