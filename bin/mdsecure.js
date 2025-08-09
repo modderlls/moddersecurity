@@ -43,7 +43,9 @@ function generateAESKey() {
 }
 
 function updatePackageJson() {
-  const pkgPath = path.resolve(process.cwd(), 'package.json');
+  // Foydalanuvchi turgan papkada package.json izlash
+  const projectDir = process.cwd();
+  const pkgPath = path.join(projectDir, 'package.json');
   let projectPkg = {};
 
   if (fs.existsSync(pkgPath)) {
@@ -51,15 +53,15 @@ function updatePackageJson() {
       const fileData = fs.readFileSync(pkgPath, 'utf8');
       projectPkg = JSON.parse(fileData);
     } catch (err) {
-      console.warn('⚠️ package.json is corrupted or invalid JSON. Recreating it.');
+      console.warn('⚠️ package.json invalid JSON format. Recreating...');
       projectPkg = {};
     }
   } else {
-    console.log('📦 package.json not found. Creating new one.');
+    console.log('📦 No package.json found. Creating new one...');
   }
 
   if (!projectPkg.name) {
-    projectPkg.name = path.basename(process.cwd());
+    projectPkg.name = path.basename(projectDir);
   }
   if (!projectPkg.version) {
     projectPkg.version = '1.0.0';
@@ -71,9 +73,8 @@ function updatePackageJson() {
   projectPkg.scripts.start = 'node server.js';
 
   fs.writeFileSync(pkgPath, JSON.stringify(projectPkg, null, 2));
-  console.log('✅ package.json updated successfully');
+  console.log(`✅ package.json updated in: ${pkgPath}`);
 }
-
 
 function createServerJs() {
   const serverContent = `
