@@ -61,7 +61,7 @@ function updatePackageJson() {
         pkgData.scripts = {};
       }
 
-      // Set dev and start scripts exactly as requested:
+      // Doimiy yangilash:
       const newDevScript = 'node server.js';
       const newStartScript = 'NODE_ENV=production node server.js';
 
@@ -75,13 +75,11 @@ function updatePackageJson() {
         updated = true;
       }
 
-      // Note: We keep other scripts intact, e.g. build, lint, etc.
-
       if (updated) {
         fs.writeFileSync(pkgPath, JSON.stringify(pkgData, null, 2));
-        console.log(`✅ package.json updated with custom "dev" and "start" scripts`);
+        console.log(`✅ package.json updated with "dev" and "start" scripts`);
       } else {
-        console.log(`ℹ️ package.json already has desired "dev" and "start" scripts`);
+        console.log(`ℹ️ package.json already has the desired "dev" and "start" scripts`);
       }
     } catch (err) {
       console.error(`⚠️ Could not read package.json. Please add these scripts manually:`);
@@ -98,6 +96,7 @@ function updatePackageJson() {
     console.log(`}`);
   }
 }
+
 
 function createServerJs() {
   const serverContent = `
