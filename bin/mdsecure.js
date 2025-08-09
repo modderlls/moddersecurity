@@ -1,156 +1,167 @@
 #!/usr/bin/env node
+
 import fs from 'fs';
 import path from 'path';
-import { fileURLToPath } from 'url';
-import crypto from 'crypto';
 import inquirer from 'inquirer';
-import dotenv from 'dotenv';
+import crypto from 'crypto';
+import { fileURLToPath } from 'url';
+import pkg from '../package.json' assert { type: 'json' };
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const pkg = JSON.parse(fs.readFileSync(path.join(__dirname, '../package.json'), 'utf8'));
-const args = process.argv.slice(2);
+const COMMANDS = ['create', 'generate-key', 'help'];
 
-const showHelp = () => {
-  console.log(`\nmdsecure v${pkg.version}\n`);
+function printHeader() {
+  console.log(`\n🔐 mdsecure v${pkg.version}`);
   console.log(`Available commands:`);
-  console.log(`  create        Yangi loyiha yoki mavjud loyihaga setup`);
-  console.log(`  generate-key  MODDER_KEY uchun maxsus AES kalit yaratish`);
-  console.log(`  help          Yordam\n`);
-};
+  console.log(`  mdsecure create        → Setup secure WS + env`);
+  console.log(`  mdsecure generate-key  → Generate MODDER_KEY and save to .env`);
+  console.log(`  mdsecure help          → Show help info\n`);
+}
 
-const generateKey = () => {
-  const key = crypto.randomBytes(32).toString('base64');
-  console.log(`\n🔑 Generated MODDER_KEY: ${key}\n`);
-
-  if (fs.existsSync('.env')) {
-    dotenv.config();
-    fs.appendFileSync('.env', `\nMODDER_KEY=${key}\n`);
-    console.log('✅ MODDER_KEY .env fayliga qo‘shildi');
+function ensureEnvKey(key, value) {
+  const envPath = path.resolve(process.cwd(), '.env');
+  let envData = '';
+  if (fs.existsSync(envPath)) {
+    envData = fs.readFileSync(envPath, 'utf8');
+    const regex = new RegExp(`^${key}=.*$`, 'm');
+    if (regex.test(envData)) {
+      envData = envData.replace(regex, `${key}="${value}"`);
+    } else {
+      envData += `\n${key}="${value}"`;
+    }
   } else {
-    fs.writeFileSync('.env', `MODDER_KEY=${key}\n`);
-    console.log('✅ .env fayli yaratildi va MODDER_KEY qo‘shildi');
+    envData = `${key}="${value}"`;
   }
-};
+  fs.writeFileSync(envPath, envData.trim() + '\n');
+  console.log(`✅ Saved ${key} to .env`);
+}
 
-const createProject = async () => {
-  console.log("\n🚀 ModderSecure Setup\n");
+function generateAESKey() {
+  return crypto.randomBytes(32).toString('base64');
+}
 
+function updatePackageJson() {
+  const pkgPath = path.resolve(process.cwd(), 'package.json');
+  let projectPkg = {};
+  if (fs.existsSync(pkgPath)) {
+    projectPkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
+  } else {
+    projectPkg.name = path.basename(process.cwd());
+    projectPkg.version = '1.0.0';
+  }
+
+  projectPkg.scripts = {
+    ...projectPkg.scripts,
+    start: 'node server.js',
+  };
+
+  fs.writeFileSync(pkgPath, JSON.stringify(projectPkg, null, 2));
+  console.log('📦 package.json updated');
+}
+
+function createServerJs() {
+  const serverContent = `
+import WebSocket, { WebSocketServer } from 'ws';
+import 'dotenv/config';
+import CryptoJS from 'crypto-js';
+
+const wss = new WebSocketServer({ port: 3000 });
+console.log('✅ WebSocket server running on ws://localhost:3000');
+
+const AES_KEY = CryptoJS.enc.Base64.parse(process.env.MODDER_KEY);
+
+wss.on('connection', (ws) => {
+  ws.on('message', async (msg) => {
+    if (msg.toString() === 'fetchPosts') {
+      const payload = [{ title: 'Hello', content: 'Secure World', user_id: 1 }];
+      const iv = CryptoJS.lib.WordArray.random(16);
+      const encrypted = CryptoJS.AES.encrypt(JSON.stringify(payload), AES_KEY, {
+        iv: iv,
+        mode: CryptoJS.mode.CBC,
+        padding: CryptoJS.pad.Pkcs7
+      });
+
+      ws.send(JSON.stringify({
+        iv: CryptoJS.enc.Base64.stringify(iv),
+        data: encrypted.ciphertext.toString(CryptoJS.enc.Base64)
+      }));
+    }
+  });
+});
+`.trim();
+
+  fs.writeFileSync(path.resolve(process.cwd(), 'server.js'), serverContent);
+  console.log('🖥 server.js created');
+}
+
+async function runCreate() {
+  console.log('⚙️ mdsecure setup starting...\n');
   const answers = await inquirer.prompt([
     {
       type: 'list',
       name: 'projectType',
-      message: '📂 Yangi loyiha yaratilsinmi yoki mavjud loyihaga qo‘shilsinmi?',
-      choices: ['Yangi loyiha', 'Mavjud loyiha']
+      message: 'Do you want to create a new project or add to existing?',
+      choices: ['New project', 'Add to existing']
     },
     {
       type: 'confirm',
-      name: 'supabase',
-      message: '🔗 Supabase bilan ishlaysizmi?',
-      default: true
+      name: 'useSupabase',
+      message: 'Is Supabase configured in this project?',
+      default: false
     },
     {
       type: 'confirm',
-      name: 'template',
-      message: '📑 Template fayllar yaratiladimi?',
+      name: 'createTemplate',
+      message: 'Generate example template files?',
       default: true
     }
   ]);
 
-  // 1. Agar yangi loyiha bo'lsa - papka yaratish
-  if (answers.projectType === 'Yangi loyiha') {
-    const { projectName } = await inquirer.prompt([
-      {
-        type: 'input',
-        name: 'projectName',
-        message: '📛 Loyihaning nomi:',
-        default: 'my-mdsecure-app'
-      }
-    ]);
-    fs.mkdirSync(projectName, { recursive: true });
-    process.chdir(projectName);
-    console.log(`📂 Yangi loyiha papkasi yaratildi: ${projectName}`);
+  const key = generateAESKey();
+  ensureEnvKey('MODDER_KEY', key);
+
+  if (answers.projectType === 'New project') {
+    updatePackageJson();
+  } else {
+    updatePackageJson();
   }
 
-  // 2. .env va MODDER_KEY
-  const aesKey = crypto.randomBytes(32).toString('base64');
-  fs.writeFileSync('.env', `MODDER_KEY=${aesKey}\n`);
-  console.log('🔐 .env fayliga MODDER_KEY yaratildi');
-
-  // 3. package.json
-  const pkgPath = path.join(process.cwd(), 'package.json');
-  if (!fs.existsSync(pkgPath)) {
-    const pkgTemplate = {
-      name: 'mdsecure-project',
-      version: '1.0.0',
-      type: 'module',
-      scripts: {
-        start: 'node server.js'
-      }
-    };
-    fs.writeFileSync(pkgPath, JSON.stringify(pkgTemplate, null, 2));
-    console.log('📦 package.json yaratildi');
+  if (answers.createTemplate) {
+    createServerJs();
   }
 
-  // 4. server.js
-  const serverCode = `import WebSocket, { WebSocketServer } from 'ws';
-import dotenv from 'dotenv';
-import crypto from 'crypto';
-
-dotenv.config();
-
-const AES_KEY = Buffer.from(process.env.MODDER_KEY, 'base64');
-const wss = new WebSocketServer({ port: 8080 });
-
-function encrypt(data) {
-  const iv = crypto.randomBytes(12);
-  const cipher = crypto.createCipheriv('aes-256-gcm', AES_KEY, iv);
-  let encrypted = cipher.update(JSON.stringify(data), 'utf8', 'base64');
-  encrypted += cipher.final('base64');
-  const authTag = cipher.getAuthTag();
-  return {
-    iv: iv.toString('base64'),
-    content: encrypted,
-    tag: authTag.toString('base64')
-  };
+  console.log('\n✅ Setup complete!');
 }
 
-wss.on('connection', ws => {
-  console.log('✅ Client ulandi');
+function runGenerateKey() {
+  const key = generateAESKey();
+  ensureEnvKey('MODDER_KEY', key);
+  console.log(`🔑 Generated new MODDER_KEY`);
+}
 
-  ws.on('message', async message => {
-    console.log('📩 Kelgan so‘rov:', message.toString());
-    const payload = encrypt({ title: 'Hello', content: 'World', user_id: 1 });
-    ws.send(JSON.stringify(payload));
-  });
-});
+function showHelp() {
+  printHeader();
+}
 
-console.log('🚀 WebSocket server 8080-portda ishga tushdi');`;
+async function main() {
+  const [, , cmd] = process.argv;
+  printHeader();
 
-  fs.writeFileSync('server.js', serverCode);
-  console.log('🖥 server.js yaratildi');
-
-  // 5. Template
-  if (answers.template) {
-    fs.mkdirSync('src', { recursive: true });
-    fs.writeFileSync('src/index.js', `console.log("Hello ModderSecure!")`);
-    console.log('📑 Template fayllar yaratildi');
+  if (!cmd || !COMMANDS.includes(cmd)) {
+    console.log('❌ Unknown or missing command.\n');
+    showHelp();
+    process.exit(1);
   }
 
-  console.log('\n✅ Setup tugadi! Endi:');
-  console.log('   npm install');
-  console.log('   npm start\n');
-};
-
-// Command ishlatish
-if (!args.length || args[0] === 'help') {
-  showHelp();
-} else if (args[0] === 'generate-key') {
-  generateKey();
-} else if (args[0] === 'create') {
-  createProject();
-} else {
-  console.log(`\n❌ Noma’lum command: ${args[0]}`);
-  showHelp();
+  if (cmd === 'create') {
+    await runCreate();
+  } else if (cmd === 'generate-key') {
+    runGenerateKey();
+  } else if (cmd === 'help') {
+    showHelp();
+  }
 }
+
+main();
