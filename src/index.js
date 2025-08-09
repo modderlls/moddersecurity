@@ -18,14 +18,13 @@ class ModderSecureSDK {
 
     /**
      * Ma'lumotlarni berilgan AES Session Key bilan shifrlash.
-     * Response formatini o'zgartirdik: { id: "teskari_string", new_id: "vaqtga_asoslangan_id", is_secured: true }
-     * Va buni {} siz yuboramiz.
+     * Bu endi 'msc' prefiksi bilan JSON stringini qaytaradi, uni {} siz yuborish keyinchalik qilinadi.
      *
      * @param {Object} data - Shifrlanadigan JavaScript obyekti.
      * @param {Buffer} sessionKey - Ma'lumotni shifrlash uchun ishlatiladigan 32-baytlik AES Session Key (Buffer).
-     * @returns {string} Yangi "msc" formatida shifrlangan string ({} siz).
+     * @returns {Object} { mscString: string, originalRequestId: string, originalTimestamp: number }
      */
-    encrypt(data, sessionKey) { // requestId ni bu yerda olib tashladik, chunki u endi Headerda.
+    encrypt(data, sessionKey) {
         if (!sessionKey || !Buffer.isBuffer(sessionKey) || sessionKey.length !== 32) {
             throw new Error('ModderSecureSDK: Valid 32-byte sessionKey (Buffer) is required for encryption.');
         }
@@ -43,22 +42,34 @@ class ModderSecureSDK {
         // Shifrlangan payload stringini teskari o'girish
         const reversedEncryptedId = actualEncryptedPayloadString.split('').reverse().join('');
         
-        // Vaqtga asoslangan yangi ID
-        const newTimeBasedId = Date.now().toString(36) + randomBytes(4).toString('hex'); // Base36 va random qism
+        // Asosiy ma'lumotlar ichiga solinadigan Request ID va Timestamp
+        const originalRequestId = randomBytes(8).toString('hex');
+        const originalTimestamp = Date.now();
+
+        // Vaqtga asoslangan yangi ID (chalg'ituvchi)
+        const newTimeBasedId = Date.now().toString(36) + randomBytes(4).toString('hex');
 
         const mjsonResponse = {
             id: reversedEncryptedId, // Teskari o'girilgan asl shifr
             new_id: newTimeBasedId, // Vaqtga asoslangan yangi ID
-            is_secured: true
+            is_secured: true,
+            // Request ID va Timestamp endi Payload ichida emas, faqat Headerda.
+            // Lekin server ularni Payload ichidan ham olishni kutadi.
+            // Bu yerda confusion bor. Clientda ham shifrlash bor.
+            // Keling, payload ichiga yana request/timestamp qo'shamiz (bu tekshiruv uchun)
+            request: originalRequestId,
+            timestamp: originalTimestamp
         };
 
-        // {} siz formatda qaytarish
-        return `msc${JSON.stringify(mjsonResponse)}`;
+        return {
+            mscString: `msc${JSON.stringify(mjsonResponse)}`,
+            originalRequestId: originalRequestId,
+            originalTimestamp: originalTimestamp
+        };
     }
 
     /**
      * Yangi "msc" formatidagi shifrlangan ma'lumotlarni deshifrlash.
-     * Endi id teskari va yangi id bor.
      *
      * @param {string} mjsonString - Yangi "msc" formatida shifrlangan string ({} siz).
      * @param {Buffer} sessionKey - Ma'lumotni deshifrlash uchun ishlatiladigan 32-baytlik AES Session Key (Buffer).
@@ -95,6 +106,10 @@ class ModderSecureSDK {
         if (!mjsonObject.new_id || typeof mjsonObject.new_id !== 'string') {
             throw new Error('ModderSecureSDK: Invalid mjson structure. Missing or invalid "new_id" field.');
         }
+        if (typeof mjsonObject.request !== 'string' || typeof mjsonObject.timestamp !== 'number') {
+            throw new Error('ModderSecureSDK: Invalid mjson structure. Missing or invalid "request" or "timestamp" field.');
+        }
+
         // Asl shifrlangan payload stringini teskari o'girish
         const actualEncryptedPayloadString = mjsonObject.id.split('').reverse().join('');
         
@@ -198,9 +213,9 @@ class ModderSecureSDK {
         console.log(`Handling premium request with pseudoKey: ${pseudoKey} and decrypted data:`, requestData);
 
         const premiumResponseContent = { message: "Premium data for user " + requestData.userId, report: "Full detailed report here..." };
-        // Bu yerda encrypt funksiyasi o'zgargani sababli requestId qo'shilmaydi.
+        // Bu yerda encrypt funksiyasi endi Request ID ni qaytarmaydi.
         // Agar premium so'rovda ham requestId kerak bo'lsa, uni bu yerda generatsiya qilish kerak.
-        return this.encrypt(premiumResponseContent, sessionKey);
+        return this.encrypt(premiumResponseContent, sessionKey).mscString; // FAQAT mscStringni qaytarish
     }
 
     isValidPseudoKey(pseudoKey) {
