@@ -1,36 +1,36 @@
-import { createCipheriv, createDecipheriv, randomBytes, scryptSync, publicEncrypt, privateDecrypt, generateKeyPairSync } from 'crypto';
+import { createCipheriv, createDecipheriv, randomBytes, scryptSync, publicEncrypt, privateDecrypt, constants } from 'crypto';
 
 class ModderSecureSDK {
     /**
      * ModderSecure SDK konstruktori.
      * Bu SDK server tomonida ishlatilishi uchun mo'ljallangan.
-     * Kalitlar ENV o'zgaruvchilardan olinishi kerak.
+     * Asosiy master kalit ENV o'zgaruvchidan olinadi.
      *
-     * @param {string} serverMasterKeyString - Serverning asosiy master kaliti. Bu .env dan olinadi.
+     * @param {string} serverMasterKeyString - Serverning asosiy master kaliti stringi.
      */
     constructor(serverMasterKeyString) {
         if (!serverMasterKeyString || typeof serverMasterKeyString !== 'string') {
             throw new Error('ModderSecureSDK: Server Master Key string is required.');
         }
 
-        const masterKeySalt = Buffer.from(process.env.MODDERSECURE_MASTER_SALT || 'SECURE_FALLBACK_SALT_DO_NOT_USE_IN_PROD', 'utf8');
-        if (process.env.NODE_ENV === 'production' && !process.env.MODDERSECURE_MASTER_SALT) {
+        const masterKeySalt = process.env.MODDERSECURE_MASTER_SALT;
+        if (process.env.NODE_ENV === 'production' && !masterKeySalt) {
             throw new Error("MODDERSECURE_MASTER_SALT is required in production environment.");
         }
+        const saltBuffer = Buffer.from(masterKeySalt || 'DEV_FALLBACK_SALT_DO_NOT_USE_IN_PROD_1234567890', 'utf8');
         
-        this.aesMasterKey = scryptSync(serverMasterKeyString, masterKeySalt, 32); // 32 bayt (256 bit) kalit
+        this.aesMasterKey = scryptSync(serverMasterKeyString, saltBuffer, 32); // 32 bayt (256 bit) kalit
         this.algorithm = 'aes-256-gcm';
     }
 
     /**
-     * Gibrid shifrlash: Serverda ma'lumotni shifrlash va mijozga yuborish.
-     * Bu funksiya asosiy serverMasterKey bilan emas, balki
-     * har bir session uchun yaratilgan AES Session Key bilan ishlaydi.
+     * Ma'lumotlarni berilgan AES Session Key bilan shifrlash.
+     * Bu funksiya serverdan mijozga javob yuborishda ishlatiladi.
      *
      * @param {Object} data - Shifrlanadigan JavaScript obyekti.
-     * @param {Buffer} sessionKey - Ma'lumotni shifrlash uchun ishlatiladigan AES Session Key.
-     * @param {string} requestId - So'rov uchun noyob ID.
-     * @returns {string} Yangi "mjson" formatida shifrlangan string.
+     * @param {Buffer} sessionKey - Ma'lumotni shifrlash uchun ishlatiladigan 32-baytlik AES Session Key (Buffer).
+     * @param {string} [requestId] - So'rov uchun noyob ID. Agar berilmasa, tasodifiy generatsiya qilinadi.
+     * @returns {string} Yangi "msc" formatida shifrlangan string.
      */
     encrypt(data, sessionKey, requestId = randomBytes(8).toString('hex')) {
         if (!sessionKey || !Buffer.isBuffer(sessionKey) || sessionKey.length !== 32) {
@@ -58,12 +58,11 @@ class ModderSecureSDK {
     }
 
     /**
-     * Mijozdan kelgan shifrlangan ma'lumotlarni deshifrlash (serverda).
-     * Yoki mijoz tomonida berilgan session key bilan deshifrlash.
-     * Bu funksiya endi sessionKey ni qabul qiladi.
+     * Mijozdan kelgan shifrlangan "msc" ma'lumotlarni deshifrlash (serverda),
+     * yoki mijoz tomonida berilgan AES Session Key bilan deshifrlash.
      *
      * @param {string} mjsonString - Yangi "mjson" formatida shifrlangan string.
-     * @param {Buffer} sessionKey - Ma'lumotni deshifrlash uchun ishlatiladigan AES Session Key.
+     * @param {Buffer} sessionKey - Ma'lumotni deshifrlash uchun ishlatiladigan 32-baytlik AES Session Key (Buffer).
      * @returns {Object} Deshifrlangan JavaScript obyekti.
      * @throws {Error} Agar deshifrlash muvaffaqiyatsiz bo'lsa yoki format noto'g'ri bo'lsa.
      */
@@ -91,17 +90,12 @@ class ModderSecureSDK {
         if (mjsonObject.is_secured === false) {
             throw new Error('ModderSecureSDK: Data explicitly marked as not secured (is_secured: false).');
         }
-
         if (!mjsonObject.id || typeof mjsonObject.id !== 'string') {
             throw new Error('ModderSecureSDK: Invalid mjson structure. Missing or invalid "id" field.');
         }
-        // Timestamp va Request ID ni tekshirish (Replay Attacksga qarshi)
-        // Server tomonida qilinishi kerak, chunki serverda so'rovlar tarixini kuzatish mumkin
-        // Bu joyda faqat format tekshiruvini qo'shamiz
         if (typeof mjsonObject.request !== 'string' || typeof mjsonObject.timestamp !== 'number') {
             throw new Error('ModderSecureSDK: Invalid mjson structure. Missing or invalid "request" or "timestamp" field.');
         }
-
 
         const encryptedPayloadString = mjsonObject.id;
         const parts = encryptedPayloadString.split(':');
@@ -110,14 +104,14 @@ class ModderSecureSDK {
         }
 
         const iv = Buffer.from(parts[0], 'hex');
-        const encryptedText = parts[1];
+        const encryptedText = Buffer.from(parts[1], 'hex');
         const authTag = Buffer.from(parts[2], 'hex');
 
-        const decipher = createDecipheriv(this.algorithm, sessionKey, iv); // Session Key bilan deshifrlash
+        const decipher = createDecipheriv(this.algorithm, sessionKey, iv);
         decipher.setAuthTag(authTag);
 
         try {
-            let decrypted = decipher.update(encryptedText, 'hex', 'utf8');
+            let decrypted = decipher.update(encryptedText, 'utf8');
             decrypted += decipher.final('utf8');
             return JSON.parse(decrypted);
         } catch (error) {
@@ -127,30 +121,11 @@ class ModderSecureSDK {
     }
 
     /**
-     * Serverda RSA kalit juftligini generatsiya qilish.
-     * Bu faqat test yoki ma'lum maqsadlar uchun serverda ishlatilishi mumkin.
-     * Mijoz tomonida RSA kalit juftligini Web Crypto API orqali yaratish tavsiya etiladi.
-     */
-    generateRsaKeyPair() {
-        const { publicKey, privateKey } = generateKeyPairSync('rsa', {
-            modulusLength: 2048, // Tavsiya etilgan uzunlik
-            publicKeyEncoding: {
-                type: 'spki',
-                format: 'pem'
-            },
-            privateKeyEncoding: {
-                type: 'pkcs8',
-                format: 'pem'
-            }
-        });
-        return { publicKey, privateKey };
-    }
-
-    /**
-     * RSA public key bilan simmetrik kalitni (AES Session Key) shifrlash.
-     * @param {Buffer} sessionKey - Shifrlanadigan AES Session Key.
-     * @param {string} rsaPublicKeyPem - Mijozning PEM formatidagi RSA public key.
-     * @returns {string} Base64 kodlangan shifrlangan session key.
+     * Serverda RSA public key bilan simmetrik kalitni (AES Session Key) shifrlash.
+     * Mijozga xavfsiz session key yuborish uchun ishlatiladi.
+     * @param {Buffer} sessionKey - Shifrlanadigan 32-baytlik AES Session Key (Buffer).
+     * @param {string} rsaPublicKeyPem - Mijozning PEM formatidagi RSA public key stringi.
+     * @returns {string} Base64 kodlangan shifrlangan session key stringi.
      */
     encryptSessionKeyWithRsa(sessionKey, rsaPublicKeyPem) {
         if (!Buffer.isBuffer(sessionKey) || sessionKey.length !== 32) {
@@ -158,23 +133,19 @@ class ModderSecureSDK {
         }
         return publicEncrypt({ key: rsaPublicKeyPem, padding: constants.RSA_PKCS1_OAEP_PADDING }, sessionKey).toString('base64');
     }
-
-    /**
-     * RSA private key bilan shifrlangan simmetrik kalitni (AES Session Key) deshifrlash.
-     * @param {string} encryptedSessionKeyBase64 - Base64 kodlangan shifrlangan session key.
-     * @param {string} rsaPrivateKeyPem - Mijozning PEM formatidagi RSA private key.
-     * @returns {Buffer} Deshifrlangan AES Session Key (Buffer).
-     */
+    
+    // Server tomonida RSA private key bilan session keyni deshifrlash (agar kerak bo'lsa)
+    // Bu funksiya hozircha ishlatilmaydi, lekin kelajak uchun SDKda bo'lishi mumkin.
     decryptSessionKeyWithRsa(encryptedSessionKeyBase64, rsaPrivateKeyPem) {
         const encryptedBuffer = Buffer.from(encryptedSessionKeyBase64, 'base64');
         return privateDecrypt({ key: rsaPrivateKeyPem, padding: constants.RSA_PKCS1_OAEP_PADDING }, encryptedBuffer);
     }
 
     /**
-     * Premium PseudoKey bilan bog'liq maxsus funksiyalar.
+     * Premium PseudoKey bilan bog'liq maxsus funksiyalar (serverda).
      * @param {string} pseudoKey - Premium mijoz tomonidan taqdim etilgan pseudoKey.
      * @param {string} encryptedRequestData - Mijozning shifrlangan so'rov ma'lumotlari (mjson formatida).
-     * @param {Buffer} sessionKey - Mijozning joriy session key'i.
+     * @param {Buffer} sessionKey - Mijozning joriy session key'i (Buffer).
      * @returns {string} Qayta ishlangan va shifrlangan javob (mjson formatida).
      */
     handlePremiumRequest(pseudoKey, encryptedRequestData, sessionKey) {
@@ -187,8 +158,7 @@ class ModderSecureSDK {
 
         let requestData;
         try {
-            // Mijoza kelgan so'rovni o'sha sessionKey bilan deshifrlash
-            requestData = this.decrypt(encryptedRequestData, sessionKey);
+            requestData = this.decrypt(encryptedRequestData, sessionKey); // So'rovni o'sha sessionKey bilan deshifrlash
         } catch (error) {
             throw new Error('ModderSecureSDK: Failed to decrypt premium request data. ' + error.message);
         }
@@ -196,8 +166,7 @@ class ModderSecureSDK {
         console.log(`Handling premium request with pseudoKey: ${pseudoKey} and decrypted data:`, requestData);
 
         const premiumResponseContent = { message: "Premium data for user " + requestData.userId, report: "Full detailed report here..." };
-        // Javobni ham o'sha sessionKey bilan shifrlash
-        return this.encrypt(premiumResponseContent, sessionKey, requestData.request); // Asl request ID ni saqlash
+        return this.encrypt(premiumResponseContent, sessionKey, requestData.request); // Javobni o'sha sessionKey bilan shifrlash
     }
 
     /**
