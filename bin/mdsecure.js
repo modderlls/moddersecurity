@@ -1,195 +1,156 @@
 #!/usr/bin/env node
-
 import fs from 'fs';
 import path from 'path';
+import { fileURLToPath } from 'url';
+import crypto from 'crypto';
 import inquirer from 'inquirer';
+import dotenv from 'dotenv';
 
-async function main() {
-  console.log('\nWelcome to mdsecure setup!\n');
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+const pkg = JSON.parse(fs.readFileSync(path.join(__dirname, '../package.json'), 'utf8'));
+const args = process.argv.slice(2);
+
+const showHelp = () => {
+  console.log(`\nmdsecure v${pkg.version}\n`);
+  console.log(`Available commands:`);
+  console.log(`  create        Yangi loyiha yoki mavjud loyihaga setup`);
+  console.log(`  generate-key  MODDER_KEY uchun maxsus AES kalit yaratish`);
+  console.log(`  help          Yordam\n`);
+};
+
+const generateKey = () => {
+  const key = crypto.randomBytes(32).toString('base64');
+  console.log(`\n🔑 Generated MODDER_KEY: ${key}\n`);
+
+  if (fs.existsSync('.env')) {
+    dotenv.config();
+    fs.appendFileSync('.env', `\nMODDER_KEY=${key}\n`);
+    console.log('✅ MODDER_KEY .env fayliga qo‘shildi');
+  } else {
+    fs.writeFileSync('.env', `MODDER_KEY=${key}\n`);
+    console.log('✅ .env fayli yaratildi va MODDER_KEY qo‘shildi');
+  }
+};
+
+const createProject = async () => {
+  console.log("\n🚀 ModderSecure Setup\n");
 
   const answers = await inquirer.prompt([
     {
-      type: 'confirm',
-      name: 'createPackageJson',
-      message: 'Create package.json (if not exists)?',
-      default: true,
+      type: 'list',
+      name: 'projectType',
+      message: '📂 Yangi loyiha yaratilsinmi yoki mavjud loyihaga qo‘shilsinmi?',
+      choices: ['Yangi loyiha', 'Mavjud loyiha']
     },
     {
       type: 'confirm',
-      name: 'createTemplate',
-      message: 'Create Next.js app/page.js template?',
-      default: true,
+      name: 'supabase',
+      message: '🔗 Supabase bilan ishlaysizmi?',
+      default: true
     },
     {
-      type: 'input',
-      name: 'supabaseUrl',
-      message: 'Enter Supabase URL:',
-      validate: (input) => input.startsWith('https://') || 'Invalid URL',
-    },
-    {
-      type: 'input',
-      name: 'supabaseKey',
-      message: 'Enter Supabase Service Role Key:',
-      validate: (input) => input.length > 0 || 'Key cannot be empty',
-    },
+      type: 'confirm',
+      name: 'template',
+      message: '📑 Template fayllar yaratiladimi?',
+      default: true
+    }
   ]);
 
-  if (answers.createPackageJson) {
-    if (!fs.existsSync('package.json')) {
-      const pkg = {
-        name: 'mdsecure-app',
-        version: '0.1.0',
-        private: true,
-        scripts: {
-          dev: 'node server.js',
-          build: 'next build',
-          start: 'NODE_ENV=production node server.js',
-        },
-        dependencies: {
-          next: '^15.4.6',
-          react: '^19.1.0',
-          'react-dom': '^19.1.0',
-          ws: '^8.18.3',
-          '@supabase/supabase-js': '^2.30.0',
-          dotenv: '^17.2.1',
-        },
-      };
-      fs.writeFileSync('package.json', JSON.stringify(pkg, null, 2));
-      console.log('package.json created');
-    } else {
-      console.log('package.json already exists, skipping');
-    }
+  // 1. Agar yangi loyiha bo'lsa - papka yaratish
+  if (answers.projectType === 'Yangi loyiha') {
+    const { projectName } = await inquirer.prompt([
+      {
+        type: 'input',
+        name: 'projectName',
+        message: '📛 Loyihaning nomi:',
+        default: 'my-mdsecure-app'
+      }
+    ]);
+    fs.mkdirSync(projectName, { recursive: true });
+    process.chdir(projectName);
+    console.log(`📂 Yangi loyiha papkasi yaratildi: ${projectName}`);
   }
 
-  if (answers.createTemplate) {
-    const appDir = path.join(process.cwd(), 'app');
-    if (!fs.existsSync(appDir)) {
-      fs.mkdirSync(appDir);
-    }
-    const pageJs = `\
-'use client';
+  // 2. .env va MODDER_KEY
+  const aesKey = crypto.randomBytes(32).toString('base64');
+  fs.writeFileSync('.env', `MODDER_KEY=${aesKey}\n`);
+  console.log('🔐 .env fayliga MODDER_KEY yaratildi');
 
-import { useEffect, useState } from 'react';
-
-export default function Home() {
-  const [posts, setPosts] = useState([]);
-  const [error, setError] = useState(null);
-
-  useEffect(() => {
-    const ws = new WebSocket('ws://localhost:3000');
-
-    ws.onmessage = (event) => {
-      try {
-        const data = JSON.parse(event.data);
-        if (data.error) {
-          setError(data.error);
-          return;
-        }
-        setPosts(Array.isArray(data) ? data : []);
-      } catch (e) {
-        setError('Invalid data from server');
-        setPosts([]);
+  // 3. package.json
+  const pkgPath = path.join(process.cwd(), 'package.json');
+  if (!fs.existsSync(pkgPath)) {
+    const pkgTemplate = {
+      name: 'mdsecure-project',
+      version: '1.0.0',
+      type: 'module',
+      scripts: {
+        start: 'node server.js'
       }
     };
-
-    ws.onerror = () => setError('WebSocket error');
-    ws.onclose = () => console.log('WebSocket closed');
-
-    return () => ws.close();
-  }, []);
-
-  if (error) {
-    return <div style={{ color: 'red', padding: 20 }}>Error: {error}</div>;
+    fs.writeFileSync(pkgPath, JSON.stringify(pkgTemplate, null, 2));
+    console.log('📦 package.json yaratildi');
   }
 
-  return (
-    <main style={{ padding: 20 }}>
-      <h1>Supabase Posts</h1>
-      <ul>
-        {posts.length === 0 && <li>No posts yet</li>}
-        {posts.map((post, i) => (
-          <li key={i}>
-            <b>Title:</b> {post.title} <br />
-            <b>Content:</b> {post.content} <br />
-            <b>User ID:</b> {post.user_id}
-          </li>
-        ))}
-      </ul>
-    </main>
-  );
+  // 4. server.js
+  const serverCode = `import WebSocket, { WebSocketServer } from 'ws';
+import dotenv from 'dotenv';
+import crypto from 'crypto';
+
+dotenv.config();
+
+const AES_KEY = Buffer.from(process.env.MODDER_KEY, 'base64');
+const wss = new WebSocketServer({ port: 8080 });
+
+function encrypt(data) {
+  const iv = crypto.randomBytes(12);
+  const cipher = crypto.createCipheriv('aes-256-gcm', AES_KEY, iv);
+  let encrypted = cipher.update(JSON.stringify(data), 'utf8', 'base64');
+  encrypted += cipher.final('base64');
+  const authTag = cipher.getAuthTag();
+  return {
+    iv: iv.toString('base64'),
+    content: encrypted,
+    tag: authTag.toString('base64')
+  };
 }
-`;
-    fs.writeFileSync(path.join(appDir, 'page.js'), pageJs);
-    console.log('Next.js template created at app/page.js');
-  }
 
-  const envContent = `NEXT_PUBLIC_SUPABASE_URL=${answers.supabaseUrl}
-SUPABASE_SERVICE_ROLE_KEY=${answers.supabaseKey}
-`;
-  fs.writeFileSync('.env.local', envContent);
-  console.log('.env.local created');
+wss.on('connection', ws => {
+  console.log('✅ Client ulandi');
 
-  const serverJs = `\
-import 'dotenv/config';
-import { createServer } from 'http';
-import { parse } from 'url';
-import next from 'next';
-import { WebSocketServer } from 'ws';
-import { createClient } from '@supabase/supabase-js';
-
-const port = parseInt(process.env.PORT, 10) || 3000;
-const dev = process.env.NODE_ENV !== 'production';
-
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL,
-  process.env.SUPABASE_SERVICE_ROLE_KEY
-);
-
-const app = next({ dev });
-const handle = app.getRequestHandler();
-
-app.prepare().then(() => {
-  const server = createServer((req, res) => {
-    const parsedUrl = parse(req.url, true);
-    handle(req, res, parsedUrl);
-  });
-
-  const wss = new WebSocketServer({ server });
-
-  wss.on('connection', async (ws) => {
-    console.log('WS client connected');
-
-    try {
-      const { data, error } = await supabase
-        .from('posts')
-        .select('title, content, user_id');
-
-      if (error) {
-        console.error('Supabase error:', error);
-        ws.send(JSON.stringify({ error: 'Failed to fetch posts' }));
-        return;
-      }
-
-      ws.send(JSON.stringify(data));
-    } catch (err) {
-      console.error('WS error:', err);
-      ws.send(JSON.stringify({ error: 'Internal server error' }));
-    }
-
-    ws.on('close', () => {
-      console.log('WS client disconnected');
-    });
-  });
-
-  server.listen(port, () => {
-    console.log(\`> Ready on http://localhost:\${port}\`);
+  ws.on('message', async message => {
+    console.log('📩 Kelgan so‘rov:', message.toString());
+    const payload = encrypt({ title: 'Hello', content: 'World', user_id: 1 });
+    ws.send(JSON.stringify(payload));
   });
 });
-`;
-  fs.writeFileSync('server.js', serverJs);
-  console.log('server.js created');
 
-  console.log('\nSetup complete! Run "npm install" then "npm run dev" to start your app.');
+console.log('🚀 WebSocket server 8080-portda ishga tushdi');`;
+
+  fs.writeFileSync('server.js', serverCode);
+  console.log('🖥 server.js yaratildi');
+
+  // 5. Template
+  if (answers.template) {
+    fs.mkdirSync('src', { recursive: true });
+    fs.writeFileSync('src/index.js', `console.log("Hello ModderSecure!")`);
+    console.log('📑 Template fayllar yaratildi');
+  }
+
+  console.log('\n✅ Setup tugadi! Endi:');
+  console.log('   npm install');
+  console.log('   npm start\n');
+};
+
+// Command ishlatish
+if (!args.length || args[0] === 'help') {
+  showHelp();
+} else if (args[0] === 'generate-key') {
+  generateKey();
+} else if (args[0] === 'create') {
+  createProject();
+} else {
+  console.log(`\n❌ Noma’lum command: ${args[0]}`);
+  showHelp();
 }
-
-main();
