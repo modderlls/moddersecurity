@@ -16,9 +16,16 @@ class ModderSecureSDK {
         this.algorithm = 'aes-256-gcm';
     }
 
-    // Bu funksiya SDK ichida umumiy shifrlash uchun qoladi
-    // SessionKey bilan ishlaydi
-    encrypt(data, sessionKey, requestId = randomBytes(8).toString('hex')) {
+    /**
+     * Ma'lumotlarni berilgan AES Session Key bilan shifrlash.
+     * Response formatini o'zgartirdik: { id: "teskari_string", new_id: "vaqtga_asoslangan_id", is_secured: true }
+     * Va buni {} siz yuboramiz.
+     *
+     * @param {Object} data - Shifrlanadigan JavaScript obyekti.
+     * @param {Buffer} sessionKey - Ma'lumotni shifrlash uchun ishlatiladigan 32-baytlik AES Session Key (Buffer).
+     * @returns {string} Yangi "msc" formatida shifrlangan string ({} siz).
+     */
+    encrypt(data, sessionKey) { // requestId ni bu yerda olib tashladik, chunki u endi Headerda.
         if (!sessionKey || !Buffer.isBuffer(sessionKey) || sessionKey.length !== 32) {
             throw new Error('ModderSecureSDK: Valid 32-byte sessionKey (Buffer) is required for encryption.');
         }
@@ -31,20 +38,33 @@ class ModderSecureSDK {
 
         const authTag = cipher.getAuthTag();
 
-        const encryptedPayloadString = `${iv.toString('hex')}:${encrypted}:${authTag.toString('hex')}`;
+        const actualEncryptedPayloadString = `${iv.toString('hex')}:${encrypted}:${authTag.toString('hex')}`;
+
+        // Shifrlangan payload stringini teskari o'girish
+        const reversedEncryptedId = actualEncryptedPayloadString.split('').reverse().join('');
+        
+        // Vaqtga asoslangan yangi ID
+        const newTimeBasedId = Date.now().toString(36) + randomBytes(4).toString('hex'); // Base36 va random qism
 
         const mjsonResponse = {
-            request: requestId,
-            timestamp: Date.now(),
-            id: encryptedPayloadString,
+            id: reversedEncryptedId, // Teskari o'girilgan asl shifr
+            new_id: newTimeBasedId, // Vaqtga asoslangan yangi ID
             is_secured: true
         };
 
+        // {} siz formatda qaytarish
         return `msc${JSON.stringify(mjsonResponse)}`;
     }
 
-    // Bu funksiya SDK ichida umumiy deshifrlash uchun qoladi
-    // SessionKey bilan ishlaydi
+    /**
+     * Yangi "msc" formatidagi shifrlangan ma'lumotlarni deshifrlash.
+     * Endi id teskari va yangi id bor.
+     *
+     * @param {string} mjsonString - Yangi "msc" formatida shifrlangan string ({} siz).
+     * @param {Buffer} sessionKey - Ma'lumotni deshifrlash uchun ishlatiladigan 32-baytlik AES Session Key (Buffer).
+     * @returns {Object} Deshifrlangan JavaScript obyekti.
+     * @throws {Error} Agar deshifrlash muvaffaqiyatsiz bo'lsa yoki format noto'g'ri bo'lsa.
+     */
     decrypt(mjsonString, sessionKey) {
         if (!sessionKey || !Buffer.isBuffer(sessionKey) || sessionKey.length !== 32) {
             throw new Error('ModderSecureSDK: Valid 32-byte sessionKey (Buffer) is required for decryption.');
@@ -57,7 +77,7 @@ class ModderSecureSDK {
             throw new Error('ModderSecureSDK: Invalid mjson format. Data is not properly secured or tampered with prefix/suffix.');
         }
 
-        const jsonString = mjsonString.substring(3);
+        const jsonString = mjsonString.substring(3); // "msc" prefiksini olib tashlash
 
         let mjsonObject;
         try {
@@ -72,12 +92,13 @@ class ModderSecureSDK {
         if (!mjsonObject.id || typeof mjsonObject.id !== 'string') {
             throw new Error('ModderSecureSDK: Invalid mjson structure. Missing or invalid "id" field.');
         }
-        if (typeof mjsonObject.request !== 'string' || typeof mjsonObject.timestamp !== 'number') {
-            throw new Error('ModderSecureSDK: Invalid mjson structure. Missing or invalid "request" or "timestamp" field.');
+        if (!mjsonObject.new_id || typeof mjsonObject.new_id !== 'string') {
+            throw new Error('ModderSecureSDK: Invalid mjson structure. Missing or invalid "new_id" field.');
         }
-
-        const encryptedPayloadString = mjsonObject.id;
-        const parts = encryptedPayloadString.split(':');
+        // Asl shifrlangan payload stringini teskari o'girish
+        const actualEncryptedPayloadString = mjsonObject.id.split('').reverse().join('');
+        
+        const parts = actualEncryptedPayloadString.split(':');
         if (parts.length !== 3) {
             throw new Error('ModderSecureSDK: Invalid encrypted payload format within mjson. (IV:encrypted:authTag expected)');
         }
@@ -110,8 +131,6 @@ class ModderSecureSDK {
         const encryptedBuffer = Buffer.from(encryptedSessionKeyBase64, 'base64');
         return privateDecrypt({ key: rsaPrivateKeyPem, padding: constants.RSA_PKCS1_OAEP_PADDING }, encryptedBuffer);
     }
-
-    // --- Yangi funksiyalar: Header shifrlash/deshifrlash va Replay Attack himoyasi ---
 
     /**
      * Request ID va Timestamp ma'lumotlarini serverning Master Key bilan shifrlash
@@ -179,7 +198,9 @@ class ModderSecureSDK {
         console.log(`Handling premium request with pseudoKey: ${pseudoKey} and decrypted data:`, requestData);
 
         const premiumResponseContent = { message: "Premium data for user " + requestData.userId, report: "Full detailed report here..." };
-        return this.encrypt(premiumResponseContent, sessionKey, requestData.request);
+        // Bu yerda encrypt funksiyasi o'zgargani sababli requestId qo'shilmaydi.
+        // Agar premium so'rovda ham requestId kerak bo'lsa, uni bu yerda generatsiya qilish kerak.
+        return this.encrypt(premiumResponseContent, sessionKey);
     }
 
     isValidPseudoKey(pseudoKey) {
