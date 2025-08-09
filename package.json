@@ -1,12 +1,12 @@
 {
   "name": "mdsecure",
-  "version": "1.0.11",
+  "version": "1.0.12",
   "description": "ModderSecure SDK for secure data and backend encryption and decryption. Provides robust AES-256 GCM encryption, secure key management, and premium features for enhanced API security and data privacy.",
   "main": "src/index.js",
   "type": "module",
   "bin": {
-  "mdsecure": "./bin/mdsecure.js"
-},
+    "mdsecure": "./bin/mdsecure.js"
+  },
   "scripts": {
     "test": "node src/test.js"
   },
